@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Visualization with D3.js and Leaflet</title>
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <!-- D3.js -->
+  <script src="https://d3js.org/d3.v5.min.js"></script>
+  <!-- Leaflet JavaScript -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- Plotly JavaScript -->
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    #chart {
+      height: 600px;
+      width: 400px;
+      float: left;
+    }
+
+    #map {
+      height: 600px;
+      width: 800px;
+      float: left;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Chart container -->
+<div id="chart"></div>
+
+<!-- Map container -->
+<div id="map"></div>
+
+<script>
+  // Set up the map
+  var map = L.map('map').setView([37.7749, -122.4194], 6); // Centered at California coordinates
+
+  // Add a base map layer
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: 'Map data &copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  // Load GeoJSON data
+  d3.json('https://raw.githubusercontent.com/codeforgermany/click_that_hood/main/public/data/california-counties.geojson')
+    .then(function (geoData) {
+      // Load enrollment data
+      d3.csv('https://raw.githubusercontent.com/krisrs1128/stat992_f23/main/exercises/ps3/calfresh-small.csv')
+        .then(function (enrollmentData) {
+          // Process enrollment data to calculate average enrollment for each county
+          var countyAvgEnrollment = d3.nest()
+            .key(function (d) { return d.county; })
+            .rollup(function (v) { return d3.mean(v, function (d) { return +d.calfresh.replace(/\s/g, ''); }); })
+            .entries(enrollmentData);
+
+          // Create a color scale based on the average enrollment values
+          var colorScale = d3.scaleSequential(d3.interpolateBlues)
+            .domain([0, d3.max(countyAvgEnrollment, function (d) { return d.value; })]);
+
+          // Draw the counties with shading based on average enrollment
+          L.geoJSON(geoData, {
+            style: function (feature) {
+              var avgEnrollment = countyAvgEnrollment.find(function (e) { return e.key === feature.properties.name; });
+              return {
+                fillColor: colorScale(avgEnrollment ? avgEnrollment.value : 0),
+                weight: 1,
+                opacity: 1,
+                color: 'white',
+                fillOpacity: 0.7
+              };
+            },
+            onEachFeature: function (feature, layer) {
+              layer.on('click', function () {
+                // Handle click event
+                handleCountyClick(feature.properties.name);
+              });
+            }
+          }).addTo(map);
+        })
+        .catch(function (error) {
+          console.error('Error loading enrollment data:', error);
+        });
+    })
+    .catch(function (error) {
+      console.error('Error loading GeoJSON file:', error);
+    });
+
+  // Chart container
+  var chartContainer = d3.select('#chart');
+
+  // Function to handle county click event
+  function handleCountyClick(countyName) {
+    // Load enrollment data
+    d3.csv('https://raw.githubusercontent.com/krisrs1128/stat992_f23/main/exercises/ps3/calfresh-small.csv')
+      .then(function (enrollmentData) {
+        // Filter data for the selected county
+        var selectedCountyData = enrollmentData.filter(function (d) {
+          return d.county === countyName;
+        });
+
+        // Extract date and calfresh values
+        var dates = selectedCountyData.map(function (d) {
+          return d.date;
+        });
+
+        var calfreshValues = selectedCountyData.map(function (d) {
+          return +d.calfresh.replace(/\s/g, '');
+        });
+
+        // Create Plotly chart
+        var chartData = [{
+          x: dates,
+          y: calfreshValues,
+          type: 'line',
+          mode: 'lines+markers',
+          marker: { color: 'blue' },
+        }];
+
+        var layout = {
+          title: `CalFresh Enrollment Over Time - ${countyName}`,
+          xaxis: { title: 'Date' },
+          yaxis: { title: 'CalFresh Enrollment' },
+        };
+
+        Plotly.newPlot('chart', chartData, layout);
+      })
+      .catch(function (error) {
+        console.error('Error loading enrollment data:', error);
+      });
+  }
+</script>
+
+</body>
+</html>
